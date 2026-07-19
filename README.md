@@ -43,7 +43,8 @@ registrar_instalacion.bat --inactivar juan_perez_DESKTOP01
 
 ## Demo
 
-- `licencia_CLIENTE_DEMO.txt` → prueba / portable antiguo
+Las licencias de clientes se crean al usar `poner_id.bat`
+(`licencia_<ID>.txt`). Los cupos vacíos solo dicen `LIBRE`.
 
 ## Repo privado
 
