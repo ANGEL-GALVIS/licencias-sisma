@@ -42,6 +42,13 @@ def _git(*args: str) -> None:
     if r.returncode != 0:
         print(r.stdout)
         print(r.stderr, file=sys.stderr)
+        if args and args[0] == "push":
+            print(
+                "\n  *** El commit quedo en su PC pero NO se subio a GitHub.\n"
+                "  Revise internet / login de git y ejecute en esta carpeta:\n"
+                "      git push origin HEAD\n",
+                file=sys.stderr,
+            )
         raise SystemExit(f"git {' '.join(args)} fallo ({r.returncode})")
 
 
