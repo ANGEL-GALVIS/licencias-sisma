@@ -22,7 +22,7 @@ echo.
 if not "%~1"=="" (
   set "CUPO=%~1"
 ) else (
-  set /p CUPO="  Cual cupo quieres liberar (1-6): "
+  set /p CUPO="  Cual cupo quieres liberar (1-12): "
 )
 
 if "%CUPO%"=="" (

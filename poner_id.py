@@ -1,5 +1,5 @@
 """
-Asigna un cupo (1-6) al codigo de activacion del cliente y sube a GitHub.
+Asigna un cupo (1-12) al codigo de activacion del cliente y sube a GitHub.
 
 Uso:
   python poner_id.py 1 juan_perez_DESKTOP01
@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
-MAX_CUPOS = 6
+MAX_CUPOS = 12
 
 
 def _slug(cliente_id: str) -> str:
@@ -57,7 +57,7 @@ def _cupo_path(n: int) -> Path:
 
 
 def listar() -> None:
-    print("  Cupos de licencia (1-6)")
+    print("  Cupos de licencia (1-12)")
     print("  " + "-" * 40)
     for i in range(1, MAX_CUPOS + 1):
         p = _cupo_path(i)
@@ -131,8 +131,8 @@ def liberar(n: int) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Poner ID en un cupo de licencia (1-6)")
-    ap.add_argument("cupo", nargs="?", type=int, help="Numero de cupo 1..6")
+    ap = argparse.ArgumentParser(description="Poner ID en un cupo de licencia (1-12)")
+    ap.add_argument("cupo", nargs="?", type=int, help="Numero de cupo 1..12")
     ap.add_argument("cliente_id", nargs="?", help="Codigo de activacion del cliente")
     ap.add_argument("--listar", action="store_true", help="Ver cupos")
     ap.add_argument("--inactivar", action="store_true", help="Dejar inactivo")

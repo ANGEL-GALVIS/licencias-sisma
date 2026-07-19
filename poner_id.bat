@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-title Poner ID de licencia (cupos 1-6)
+title Poner ID de licencia (cupos 1-12)
 color 0B
 
 if exist "%~dp0..\.venv\Scripts\python.exe" (
@@ -12,7 +12,7 @@ if exist "%~dp0..\.venv\Scripts\python.exe" (
 
 echo.
 echo  ================================================
-echo   CUPOS DE LICENCIA (1 a 6)
+echo   CUPOS DE LICENCIA (1 a 12)
 echo  ================================================
 echo.
 
@@ -27,7 +27,7 @@ if not "%~1"=="" (
 REM Doble clic / sin argumentos: preguntar
 "%PY%" "%~dp0poner_id.py" --listar
 echo.
-set /p CUPO="  Numero de cupo (1-6): "
+set /p CUPO="  Numero de cupo (1-12): "
 if "%CUPO%"=="" (
   echo   Cancelado.
   pause
