@@ -75,7 +75,7 @@ def registrar(cliente_id: str, *, estado: str = "activo") -> Path:
 
     msg = f"licencia {cid}: {estado}"
     _git("commit", "-m", msg)
-    _git("push", "origin", "HEAD")
+    _git("push", "origin", "master")
     print(f"  OK subido a GitHub (licencias-sisma).")
     return destino
 

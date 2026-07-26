@@ -32,6 +32,20 @@ registrar_instalacion.bat juan_perez_DESKTOP01
 registrar_instalacion.bat --inactivar juan_perez_DESKTOP01
 ```
 
+## Activar / desactivar (kill-switch)
+
+Sin tocar cupos — solo pone `activo` o `inactivo` y sube a GitHub:
+
+```bat
+activar_desactivar_licencia.bat
+activar_desactivar_licencia.bat --listar
+activar_desactivar_licencia.bat activar serviciosemergency_emergency
+activar_desactivar_licencia.bat desactivar serviciosemergency_emergency
+```
+
+Menu: listar → elegir numero o pegar ID → activar o desactivar.  
+Si quiere liberar el cupo (dejar LIBRE), use `liberar_cupo.bat`.
+
 ## Como funciona
 
 1. El cliente ejecuta `CONFIGURAR_PRIMERA_VEZ.bat`
@@ -48,5 +62,25 @@ Las licencias de clientes se crean al usar `poner_id.bat`
 
 ## Repo privado
 
-Si el repo es privado, el cliente necesita token de solo lectura
-(configurado por el proveedor de forma oculta al empacar).
+Si el repo es **privado**, el portable del cliente **debe** llevar
+`runtime/github_lic_token.txt` (token de solo lectura al repo).
+
+1. Cree un PAT (fine-grained) con permiso **Contents: Read** solo en
+   `ANGEL-GALVIS/licencias-sisma`
+2. Guardelo en su PC de proveedor (NO en Git):
+
+```text
+comun/_lic_token.txt
+```
+
+3. Al empacar, `herramientas\actualizar_portable.bat` lo copia oculto a:
+
+```text
+Ecosistema_Sisma_Portable\runtime\github_lic_token.txt
+```
+
+Sin ese token, el cliente recibe HTTP 404 y ve
+«Instalacion NO registrada» aunque el ID ya este `activo` en GitHub.
+
+Alternativa: haga el repo **publico** (solo contiene activo/inactivo).
+Entonces el portable no necesita token.
