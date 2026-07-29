@@ -16,11 +16,10 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent
+from git_local import REPO, ensure_repo, run_git
 
 
 def _print(msg: str = "") -> None:
@@ -47,26 +46,7 @@ def _slug(cliente_id: str) -> str:
 
 
 def _git(*args: str) -> None:
-    r = subprocess.run(
-        ["git", *args],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if r.returncode != 0:
-        if r.stdout:
-            _print(r.stdout)
-        if r.stderr:
-            print(r.stderr, file=sys.stderr)
-        if args and args[0] == "push":
-            print(
-                "\n  *** Commit local OK pero NO subio a GitHub.\n"
-                "  Ejecute: git push origin HEAD\n",
-                file=sys.stderr,
-            )
-        raise SystemExit(f"git {' '.join(args)} fallo ({r.returncode})")
+    run_git(*args)
 
 
 def _estado_archivo(ruta: Path) -> str:
@@ -110,15 +90,9 @@ def listar() -> None:
 
 
 def _commit_y_push(nombre: str, mensaje: str) -> None:
+    ensure_repo()
     _git("add", nombre)
-    st = subprocess.run(
-        ["git", "status", "--porcelain", nombre],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    st = run_git("status", "--porcelain", nombre, check=False)
     if not (st.stdout or "").strip():
         _print("  Sin cambios que subir (ya estaba igual).")
         return
@@ -128,6 +102,7 @@ def _commit_y_push(nombre: str, mensaje: str) -> None:
 
 
 def set_estado(cliente_id: str, *, activo: bool) -> None:
+    ensure_repo()
     cid = _slug(cliente_id)
     estado = "activo" if activo else "inactivo"
     destino = REPO / f"licencia_{cid}.txt"

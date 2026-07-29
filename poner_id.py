@@ -16,14 +16,17 @@ Tambien:
 from __future__ import annotations
 
 import argparse
+import base64
+import json
 import re
-import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent
+from git_local import REPO, ensure_repo, run_git
+
 MAX_CUPOS = 12
 LICENSE_OWNER = "ANGEL-GALVIS"
 LICENSE_REPO = "licencias-sisma"
@@ -61,27 +64,7 @@ def _slug(cliente_id: str) -> str:
 
 
 def _git(*args: str) -> None:
-    r = subprocess.run(
-        ["git", *args],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if r.returncode != 0:
-        if r.stdout:
-            _print(r.stdout)
-        if r.stderr:
-            print(r.stderr, file=sys.stderr)
-        if args and args[0] == "push":
-            print(
-                "\n  *** El commit quedo en su PC pero NO se subio a GitHub.\n"
-                "  Revise internet / login de git y ejecute en esta carpeta:\n"
-                "      git push origin HEAD\n",
-                file=sys.stderr,
-            )
-        raise SystemExit(f"git {' '.join(args)} fallo ({r.returncode})")
+    run_git(*args)
 
 
 def _cupo_path(n: int) -> Path:
@@ -133,45 +116,57 @@ def _limpiar_duplicados_malos(cid: str) -> list[str]:
 def _verificar_remoto(cid: str) -> bool:
     """True si GitHub ya sirve licencia_<id>.txt = activo."""
     nombre = f"licencia_{cid}.txt"
-    url = (
-        f"https://raw.githubusercontent.com/{LICENSE_OWNER}/{LICENSE_REPO}/"
-        f"{LICENSE_BRANCH}/{nombre}"
-    )
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": "SismaLicActivate/1.0",
-                "Cache-Control": "no-cache",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            estado = resp.read().decode("utf-8", "ignore").strip().lower()
-        ok = "activo" in estado and "inactivo" not in estado
-        _print(f"  Remoto {nombre}: {estado or '(vacio)'}{' OK' if ok else ''}")
-        return ok
-    except urllib.error.HTTPError as exc:
-        _print(f"  Remoto {nombre}: HTTP {exc.code}")
-        return False
-    except Exception as exc:
-        _print(f"  Remoto: no se pudo verificar ({exc})")
-        return False
+    headers = {
+        "User-Agent": "SismaLicActivate/1.0",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+    urls = [
+        (
+            f"https://raw.githubusercontent.com/{LICENSE_OWNER}/{LICENSE_REPO}/"
+            f"{LICENSE_BRANCH}/{nombre}?t={int(time.time())}"
+        ),
+        (
+            f"https://api.github.com/repos/{LICENSE_OWNER}/{LICENSE_REPO}/"
+            f"contents/{nombre}?ref={LICENSE_BRANCH}"
+        ),
+    ]
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                body = resp.read().decode("utf-8", "ignore").strip()
+            # API contents devuelve JSON con content en base64
+            if '"content"' in body and '"encoding"' in body:
+                data = json.loads(body)
+                raw = base64.b64decode(data.get("content", "")).decode(
+                    "utf-8", "ignore"
+                )
+                estado = raw.strip().lower()
+            else:
+                estado = body.lower()
+            ok = "activo" in estado and "inactivo" not in estado
+            _print(f"  Remoto {nombre}: {estado or '(vacio)'}{' OK' if ok else ''}")
+            return ok
+        except urllib.error.HTTPError as exc:
+            _print(f"  Remoto {nombre}: HTTP {exc.code} ({url.split('?',1)[0].rsplit('/',1)[-1]})")
+            continue
+        except Exception as exc:
+            _print(f"  Remoto: no se pudo verificar ({exc})")
+            continue
+    return False
 
 
 def _commit_y_push(paths: list[str], mensaje: str) -> None:
     if not paths:
         return
+    ensure_repo()
     _git("add", *paths)
-    st = subprocess.run(
-        ["git", "status", "--porcelain", *paths],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    st = run_git("status", "--porcelain", *paths, check=False)
     if not (st.stdout or "").strip():
-        _print("  Sin cambios que subir.")
+        _print("  Sin cambios locales que commitear (ya estaban iguales).")
+        # Igual hay que confirmar remoto: a veces el archivo local existe
+        # pero nunca se subio (carpeta sin .git).
         return
     _git("commit", "-m", mensaje)
     _git("push", "origin", "master")
@@ -179,6 +174,7 @@ def _commit_y_push(paths: list[str], mensaje: str) -> None:
 
 
 def asignar(n: int | None, cliente_id: str, *, estado: str = "activo") -> None:
+    ensure_repo()
     cid = _slug(cliente_id)
     estado = "inactivo" if "inactivo" in estado.lower() else "activo"
 
@@ -221,13 +217,21 @@ def asignar(n: int | None, cliente_id: str, *, estado: str = "activo") -> None:
 
     if estado == "activo":
         _print("  Verificando GitHub...")
-        if not _verificar_remoto(cid):
-            _print(
-                "  Aviso: GitHub a veces tarda unos segundos en refrescar.\n"
-                "  Si el cliente falla, espere 10-20 s y vuelva a intentar."
+        ok = False
+        for intento in range(1, 6):
+            if _verificar_remoto(cid):
+                ok = True
+                break
+            if intento < 5:
+                _print(f"  Esperando refresco de GitHub ({intento}/5)...")
+                time.sleep(3)
+        if not ok:
+            raise SystemExit(
+                "\n  ERROR: el ID NO quedo activo en GitHub.\n"
+                "  El cliente NO podra entrar. Revise internet / login git\n"
+                "  y vuelva a ejecutar: poner_id.bat " + cid + "\n"
             )
-        else:
-            _print("  Listo: el cliente ya puede entrar con este ID.")
+        _print("  Listo: el cliente ya puede entrar con este ID.")
 
 
 def liberar(n: int) -> None:

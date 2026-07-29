@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 from pathlib import Path
 
-REPO_DIR = Path(__file__).resolve().parent
+from git_local import REPO as REPO_DIR, ensure_repo, run_git
+
 ARCHIVO = "licencia_{cliente}.txt"
 
 
@@ -39,21 +39,11 @@ def _cliente_desde_solicitud(ruta: Path) -> str:
 
 
 def _git(*args: str) -> None:
-    r = subprocess.run(
-        ["git", *args],
-        cwd=REPO_DIR,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if r.returncode != 0:
-        print(r.stdout)
-        print(r.stderr, file=sys.stderr)
-        raise SystemExit(f"git {' '.join(args)} fallo ({r.returncode})")
+    run_git(*args)
 
 
 def registrar(cliente_id: str, *, estado: str = "activo") -> Path:
+    ensure_repo()
     cid = _slug_ok(cliente_id)
     estado = "inactivo" if "inactivo" in estado.lower() else "activo"
     nombre = ARCHIVO.format(cliente=cid)
@@ -63,12 +53,7 @@ def registrar(cliente_id: str, *, estado: str = "activo") -> Path:
 
     _git("add", nombre)
     # Commit solo si hay cambios
-    st = subprocess.run(
-        ["git", "status", "--porcelain", nombre],
-        cwd=REPO_DIR,
-        capture_output=True,
-        text=True,
-    )
+    st = run_git("status", "--porcelain", nombre, check=False)
     if not (st.stdout or "").strip():
         print("  Sin cambios que subir (ya estaba igual).")
         return destino
