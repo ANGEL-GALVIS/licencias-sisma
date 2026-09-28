@@ -4,6 +4,10 @@ cd /d "%~dp0"
 title Activar licencia - solo pegue el ID
 color 0B
 
+REM Git recien instalado: asegurar PATH aunque no se haya reiniciado la PC
+if exist "%ProgramFiles%\Git\cmd\git.exe" set "PATH=%ProgramFiles%\Git\cmd;%PATH%"
+if exist "%ProgramFiles(x86)%\Git\cmd\git.exe" set "PATH=%ProgramFiles(x86)%\Git\cmd;%PATH%"
+
 if exist "%~dp0..\.venv\Scripts\python.exe" (
   set "PY=%~dp0..\.venv\Scripts\python.exe"
 ) else (

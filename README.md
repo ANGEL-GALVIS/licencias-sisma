@@ -1,86 +1,46 @@
-# Licencias Ecosistema Sisma
+# licencias-sisma
 
-Control remoto: activo / inactivo por instalacion (PC del cliente).
-
-## Cupos listos (12)
-
-Hay **12 cupos** en GitHub. Cuando le llegue el codigo de activacion
-por correo, asigne el ID:
-
-```bat
-poner_id.bat
-liberar_cupo.bat
-poner_id.bat --listar
-```
-
-| Cupo | Archivo      |
-|------|--------------|
-| 1-12 | cupo_01.txt … cupo_12.txt |
-
-Eso crea `licencia_<ID>.txt` con `activo` y lo sube a GitHub.
-
-Liberar (inactivo + cupo LIBRE):
-
-```bat
-liberar_cupo.bat
-```
-
-Tambien sirve (sin cupo):
-
-```bat
-registrar_instalacion.bat juan_perez_DESKTOP01
-registrar_instalacion.bat --inactivar juan_perez_DESKTOP01
-```
-
-## Activar / desactivar (kill-switch)
-
-Sin tocar cupos — solo pone `activo` o `inactivo` y sube a GitHub:
-
-```bat
-activar_desactivar_licencia.bat
-activar_desactivar_licencia.bat --listar
-activar_desactivar_licencia.bat activar serviciosemergency_emergency
-activar_desactivar_licencia.bat desactivar serviciosemergency_emergency
-```
-
-Menu: listar → elegir numero o pegar ID → activar o desactivar.  
-Si quiere liberar el cupo (dejar LIBRE), use `liberar_cupo.bat`.
-
-## Como funciona
-
-1. El cliente ejecuta `CONFIGURAR_PRIMERA_VEZ.bat`
-2. Usted recibe el **codigo de activacion** por correo
-3. Usted: `poner_id.bat` → cupo + ID
-4. El bot lee en GitHub `licencia_<codigo>.txt`
-   - `activo` → arranca
-   - `inactivo` o no existe → no arranca
-
-## Demo
-
-Las licencias de clientes se crean al usar `poner_id.bat`
-(`licencia_<ID>.txt`). Los cupos vacíos solo dicen `LIBRE`.
-
-## Repo privado
-
-Si el repo es **privado**, el portable del cliente **debe** llevar
-`runtime/github_lic_token.txt` (token de solo lectura al repo).
-
-1. Cree un PAT (fine-grained) con permiso **Contents: Read** solo en
-   `ANGEL-GALVIS/licencias-sisma`
-2. Guardelo en su PC de proveedor (NO en Git):
+Repo **público** de kill-switch. Un archivo por instalación:
 
 ```text
-comun/_lic_token.txt
+licencia_<cliente_id>.txt
 ```
 
-3. Al empacar, `herramientas\actualizar_portable.bat` lo copia oculto a:
+Contenido: `activo` o `inactivo`.
 
-```text
-Ecosistema_Sisma_Portable\runtime\github_lic_token.txt
-```
+El portable lo lee con la API de contenidos de GitHub y, si el token falla
+con HTTP 401, vuelve a leer **sin** token. Por eso una licencia no se cae
+cuando se revoca el PAT viejo, siempre que este repo siga público.
 
-Sin ese token, el cliente recibe HTTP 404 y ve
-«Instalacion NO registrada» aunque el ID ya este `activo` en GitHub.
+## Dos tokens (no se mezclan)
 
-Alternativa: haga el repo **publico** (solo contiene activo/inactivo).
-Entonces el portable no necesita token.
+| Archivo en el PC del proveedor | Quién lo usa | ¿Se embarca? |
+| --- | --- | --- |
+| `comun/_lic_token.txt` | Solo `herramientas/subir_delta_github.py` (escritura en `auto-facturar-updates`) | No |
+| `comun/_lic_token_client.txt` | Empaque del portable y lectura de este repo + updates | Sí, como `runtime/github_lic_token.txt` |
+
+El token cliente es un PAT **fine-grained** (`github_pat_`) con
+**Contents: Read-only** en:
+
+- `ANGEL-GALVIS/auto-facturar-updates` (privado: manifest y ZIP)
+- `ANGEL-GALVIS/licencias-sisma` (este repo, público)
+
+No sirve un token clásico (`gho_`, `ghp_`, `ghu_`, `ghs_`). El empaque
+aborta si el archivo falta o si el token tiene uno de esos prefijos.
+
+## Rotar
+
+1. Crear el PAT nuevo (fine-grained, Contents: Read-only en los dos repos)
+   y guardarlo en `comun/_lic_token_client.txt` (no va a git).
+2. Recompilar los `.exe` que embeben `comun/` (`token_cliente.py`,
+   `licencia.py`, `actualizador_portable.py`), incluido `ActualizarPortable.exe`.
+3. Publicar el delta con extras (`EMPAQUETAR_DELTA` sin `--sin-extras` y
+   `SUBIR_DELTA_GITHUB`) o el ZIP completo (`actualizar_portable.bat`).
+   El actualizador ya instalado (1.1.21) no copia
+   `runtime/github_lic_token.txt`. La semilla va en `assets/_lic_client.txt`
+   y el arranque (`MONITOR.bat` / el código nuevo) pisa el token viejo.
+4. Cuando los clientes abrieron el producto después de ese update, revocar
+   el PAT anterior.
+
+No hace falta un token para leer una licencia de este repo si sigue público.
+El token cliente solo hace falta para el repo privado de updates.

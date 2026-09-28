@@ -113,53 +113,57 @@ def _limpiar_duplicados_malos(cid: str) -> list[str]:
     return tocados
 
 
-def _verificar_remoto(cid: str) -> bool:
-    """True si GitHub ya sirve licencia_<id>.txt = activo."""
+def _estado_remoto_api(cid: str, *, ref: str = LICENSE_BRANCH) -> str | None:
+    """
+    Lee licencia_<id>.txt vía Contents API (sin caché CDN).
+    Preferir ref=SHA del commit recién pusheado para no esperar a master.
+    """
     nombre = f"licencia_{cid}.txt"
+    url = (
+        f"https://api.github.com/repos/{LICENSE_OWNER}/{LICENSE_REPO}/"
+        f"contents/{nombre}?ref={ref}"
+    )
     headers = {
-        "User-Agent": "SismaLicActivate/1.0",
+        "User-Agent": "SismaLicActivate/1.1",
+        "Accept": "application/vnd.github+json",
         "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
+        "X-GitHub-Api-Version": "2022-11-28",
     }
-    urls = [
-        (
-            f"https://raw.githubusercontent.com/{LICENSE_OWNER}/{LICENSE_REPO}/"
-            f"{LICENSE_BRANCH}/{nombre}?t={int(time.time())}"
-        ),
-        (
-            f"https://api.github.com/repos/{LICENSE_OWNER}/{LICENSE_REPO}/"
-            f"contents/{nombre}?ref={LICENSE_BRANCH}"
-        ),
-    ]
-    for url in urls:
-        try:
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                body = resp.read().decode("utf-8", "ignore").strip()
-            # API contents devuelve JSON con content en base64
-            if '"content"' in body and '"encoding"' in body:
-                data = json.loads(body)
-                raw = base64.b64decode(data.get("content", "")).decode(
-                    "utf-8", "ignore"
-                )
-                estado = raw.strip().lower()
-            else:
-                estado = body.lower()
-            ok = "activo" in estado and "inactivo" not in estado
-            _print(f"  Remoto {nombre}: {estado or '(vacio)'}{' OK' if ok else ''}")
-            return ok
-        except urllib.error.HTTPError as exc:
-            _print(f"  Remoto {nombre}: HTTP {exc.code} ({url.split('?',1)[0].rsplit('/',1)[-1]})")
-            continue
-        except Exception as exc:
-            _print(f"  Remoto: no se pudo verificar ({exc})")
-            continue
-    return False
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8", "ignore"))
+        raw = base64.b64decode(data.get("content", "")).decode("utf-8", "ignore")
+        return raw.strip().lower()
+    except urllib.error.HTTPError as exc:
+        _print(f"  Remoto {nombre}: HTTP {exc.code} (API)")
+        return None
+    except Exception as exc:
+        _print(f"  Remoto: no se pudo verificar ({exc})")
+        return None
 
 
-def _commit_y_push(paths: list[str], mensaje: str) -> None:
+def _verificar_remoto(
+    cid: str, *, esperado: str = "activo", ref: str | None = None
+) -> bool:
+    """True si GitHub (API) ya tiene el estado esperado."""
+    nombre = f"licencia_{cid}.txt"
+    esperado = "inactivo" if "inactivo" in esperado.lower() else "activo"
+    estado = _estado_remoto_api(cid, ref=ref or LICENSE_BRANCH)
+    if estado is None:
+        return False
+    if esperado == "activo":
+        ok = "activo" in estado and "inactivo" not in estado
+    else:
+        ok = "inactivo" in estado
+    _print(f"  Remoto {nombre}: {estado or '(vacio)'}{' OK' if ok else ''}")
+    return ok
+
+
+def _commit_y_push(paths: list[str], mensaje: str) -> str | None:
+    """Commit + push. Devuelve SHA de HEAD (o None si no hubo cambios)."""
     if not paths:
-        return
+        return None
     ensure_repo()
     _git("add", *paths)
     st = run_git("status", "--porcelain", *paths, check=False)
@@ -167,10 +171,12 @@ def _commit_y_push(paths: list[str], mensaje: str) -> None:
         _print("  Sin cambios locales que commitear (ya estaban iguales).")
         # Igual hay que confirmar remoto: a veces el archivo local existe
         # pero nunca se subio (carpeta sin .git).
-        return
+        return None
     _git("commit", "-m", mensaje)
     _git("push", "origin", "master")
+    sha = (run_git("rev-parse", "HEAD", check=False).stdout or "").strip() or None
     _print("  OK subido a GitHub.")
+    return sha
 
 
 def asignar(n: int | None, cliente_id: str, *, estado: str = "activo") -> None:
@@ -213,18 +219,19 @@ def asignar(n: int | None, cliente_id: str, *, estado: str = "activo") -> None:
         _print(f"  Limpieza: {', '.join(extras)} -> inactivo")
 
     paths = [lic.name, cupo.name, *extras]
-    _commit_y_push(paths, f"cupo {n:02d}: {cid} ({estado})")
+    sha = _commit_y_push(paths, f"cupo {n:02d}: {cid} ({estado})")
 
     if estado == "activo":
         _print("  Verificando GitHub...")
         ok = False
         for intento in range(1, 6):
-            if _verificar_remoto(cid):
+            ref = sha if sha and intento <= 3 else LICENSE_BRANCH
+            if _verificar_remoto(cid, esperado="activo", ref=ref):
                 ok = True
                 break
             if intento < 5:
                 _print(f"  Esperando refresco de GitHub ({intento}/5)...")
-                time.sleep(3)
+                time.sleep(2)
         if not ok:
             raise SystemExit(
                 "\n  ERROR: el ID NO quedo activo en GitHub.\n"

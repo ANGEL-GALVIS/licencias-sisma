@@ -45,12 +45,22 @@ def _print(msg: str = "") -> None:
 def run_git(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     """
     Ejecuta git en este repo.
-    Pasa safe.directory en la llamada (sin tocar git config global)
-    para PCs donde la carpeta pertenece a otro usuario de Windows.
+    Pasa safe.directory + autor de commit SOLO en la llamada (-c),
+    sin tocar git config global (PCs nuevos sin user.name / user.email).
     """
     git = encontrar_git()
     safe = REPO.resolve().as_posix()
-    cmd = [git, "-c", f"safe.directory={safe}", *args]
+    # Identidad solo para esta invocacion (evita "Author identity unknown")
+    cmd = [
+        git,
+        "-c",
+        f"safe.directory={safe}",
+        "-c",
+        "user.name=Licencias Sisma",
+        "-c",
+        "user.email=licencias-sisma@users.noreply.github.com",
+        *args,
+    ]
     r = subprocess.run(
         cmd,
         cwd=REPO,

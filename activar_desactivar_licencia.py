@@ -15,11 +15,20 @@ Uso:
 from __future__ import annotations
 
 import argparse
+import base64
+import json
 import re
 import sys
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from git_local import REPO, ensure_repo, run_git
+
+LICENSE_OWNER = "ANGEL-GALVIS"
+LICENSE_REPO = "licencias-sisma"
+LICENSE_BRANCH = "master"
 
 
 def _print(msg: str = "") -> None:
@@ -89,16 +98,64 @@ def listar() -> None:
     _print()
 
 
-def _commit_y_push(nombre: str, mensaje: str) -> None:
+def _estado_remoto_api(cid: str, *, ref: str = LICENSE_BRANCH) -> str | None:
+    """Lee vía Contents API. Preferir ref=SHA del commit recién pusheado."""
+    nombre = f"licencia_{cid}.txt"
+    url = (
+        f"https://api.github.com/repos/{LICENSE_OWNER}/{LICENSE_REPO}/"
+        f"contents/{nombre}?ref={ref}"
+    )
+    headers = {
+        "User-Agent": "SismaLicToggle/1.1",
+        "Accept": "application/vnd.github+json",
+        "Cache-Control": "no-cache",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8", "ignore"))
+        raw = base64.b64decode(data.get("content", "")).decode("utf-8", "ignore")
+        return raw.strip().lower()
+    except urllib.error.HTTPError as exc:
+        _print(f"  Remoto {nombre}: HTTP {exc.code} (API)")
+        return None
+    except Exception as exc:
+        _print(f"  Remoto: no se pudo verificar ({exc})")
+        return None
+
+
+def _verificar_remoto(
+    cid: str, *, esperado: str, ref: str | None = None
+) -> bool:
+    esperado = "inactivo" if "inactivo" in esperado.lower() else "activo"
+    estado = _estado_remoto_api(cid, ref=ref or LICENSE_BRANCH)
+    if estado is None:
+        return False
+    if esperado == "activo":
+        ok = "activo" in estado and "inactivo" not in estado
+    else:
+        ok = "inactivo" in estado
+    _print(
+        f"  Remoto licencia_{cid}.txt: {estado or '(vacio)'}"
+        f"{' OK' if ok else ''}"
+    )
+    return ok
+
+
+def _commit_y_push(nombre: str, mensaje: str) -> str | None:
+    """Commit + push. Devuelve SHA de HEAD (o None si no hubo cambios)."""
     ensure_repo()
     _git("add", nombre)
     st = run_git("status", "--porcelain", nombre, check=False)
     if not (st.stdout or "").strip():
         _print("  Sin cambios que subir (ya estaba igual).")
-        return
+        return None
     _git("commit", "-m", mensaje)
     _git("push", "origin", "master")
+    sha = (run_git("rev-parse", "HEAD", check=False).stdout or "").strip() or None
     _print("  OK subido a GitHub.")
+    return sha
 
 
 def set_estado(cliente_id: str, *, activo: bool) -> None:
@@ -108,11 +165,28 @@ def set_estado(cliente_id: str, *, activo: bool) -> None:
     destino = REPO / f"licencia_{cid}.txt"
     destino.write_text(estado + "\n", encoding="utf-8")
     _print(f"  Archivo: {destino.name} → {estado}")
-    _commit_y_push(destino.name, f"licencia {cid}: {estado}")
+    sha = _commit_y_push(destino.name, f"licencia {cid}: {estado}")
+
+    _print("  Verificando GitHub (API)...")
+    ok = False
+    for intento in range(1, 6):
+        ref = sha if sha and intento <= 3 else LICENSE_BRANCH
+        if _verificar_remoto(cid, esperado=estado, ref=ref):
+            ok = True
+            break
+        if intento < 5:
+            _print(f"  Esperando refresco de GitHub ({intento}/5)...")
+            time.sleep(2)
+    if not ok:
+        raise SystemExit(
+            f"\n  ERROR: en GitHub NO quedo '{estado}'.\n"
+            f"  Revise internet / login git y vuelva a ejecutar.\n"
+        )
+
     if activo:
-        _print("  El cliente puede entrar (espere 10-20 s si GitHub tarda).")
+        _print("  Listo: el cliente puede entrar.")
     else:
-        _print("  El cliente queda bloqueado al validar licencia.")
+        _print("  Listo: el cliente queda bloqueado al validar licencia.")
         _print("  (El cupo NO se libera; use liberar_cupo.bat si quiere LIBRE.)")
 
 
